@@ -78,7 +78,7 @@ type SignalContextCapability* {.
 # Dataspaces
 #
 
-import streams
+import std/streams
 
 type
   DataspaceCapability* {.
@@ -115,7 +115,7 @@ type
     ## If this object is freed before ``close`` is called it will
     ## continue to consume address space.
     rm: RegionMap
-    base: ByteAddress
+    data: ptr array[0, byte]
     size: int
       # actually its just a bit of RM metadata
 
@@ -124,7 +124,9 @@ proc size*(s: DataspaceStream): int =
   ## The result will always be page aligned.
   if not s.ds.isNil: result = s.ds.size
 
-proc noopClose(s: Stream) = discard
+proc dsClose(s: Stream) =
+  var s = DataspaceStream(s)
+  s.ds = DataspaceStreamFactory()
 
 proc dsAtEnd(s: Stream): bool =
   var s = DataspaceStream(s)
@@ -141,27 +143,38 @@ proc dsGetPosition(s: Stream): int =
   assert(not s.ds.isNil, "stream is closed")
   clamp(s.pos, 0, s.size)
 
+{.push boundChecks: off.}
+
+proc clear*(s: DataspaceStream) =
+  ## Zeros the contents of the dataspace.
+  if not s.ds.isNil:
+    zeroMem(s.ds.data[0].addr, s.ds.size)
+
 proc dsPeekData(s: Stream, buffer: pointer, bufLen: int): int =
   var s = DataspaceStream(s)
   assert(not s.ds.isNil, "stream is closed")
   result = clamp(bufLen, 0, s.ds.size - s.pos)
   if result > 0:
-    copyMem(buffer, cast[pointer](cast[int](s.ds.base) + s.pos), result)
+    copyMem(buffer, s.ds.data[s.pos].addr, result)
 
 proc dsReadData(s: Stream, buffer: pointer, bufLen: int): int =
   var s = DataspaceStream(s)
   assert(not s.ds.isNil, "stream is closed")
-  result = clamp(s.ds.size, 0, s.ds.size - s.pos)
+  result = clamp(bufLen, 0, s.ds.size - s.pos)
   if result > 0:
-    copyMem(buffer, cast[pointer](cast[int](s.ds.base) + s.pos), result)
+    copyMem(buffer, s.ds.data[s.pos].addr, result)
     inc(s.pos, result)
 
 proc dsWriteData(s: Stream, buffer: pointer, bufLen: int) =
   var s = DataspaceStream(s)
   assert(not s.ds.isNil, "stream is closed")
   let count = clamp(bufLen, 0, s.ds.size - s.pos)
-  copyMem(cast[pointer](cast[int](s.ds.base) + s.pos), buffer, count)
+  copyMem(s.ds.data[s.pos].addr, buffer, count)
   inc(s.pos, count)
+
+{.pop.}
+
+proc dsFlush(s: Stream) = discard
 
 proc newDataspaceStreamFactory*(rm: RegionMap): DataspaceStreamFactory =
   ## Initialize a new dataspace stream factory.
@@ -169,18 +182,17 @@ proc newDataspaceStreamFactory*(rm: RegionMap): DataspaceStreamFactory =
 
 proc close*(f: DataspaceStreamFactory) =
   ## Close a dataspace and invalidate its streams.
-  f.rm.detach f.base
-  f.base = 0
+  f.rm.detach cast[ByteAddress](f.data)
+  f.data = nil
   f.size = 0
 
 proc replace*(f: DataspaceStreamFactory; cap: DataspaceCapability) =
   ## Replace the underlying dataspace of present and future streams
   ## produced by this factory.
-  if f.base != 0:
-    f.rm.detach f.base
-    f.base = 0
+  if f.data != nil:
+    close f
   if cap.isValid:
-    f.base = f.rm.attach cap
+    f.data = cast[ptr array[0,byte]](f.rm.attach cap)
     f.size = cap.size
 
 proc newStream*(f: DataspaceStreamFactory): DataspaceStream =
@@ -188,11 +200,12 @@ proc newStream*(f: DataspaceStreamFactory): DataspaceStream =
   ## If the dataspace is updated at the factory then all currently
   ## issued streams will be updated as well.
   result = DataspaceStream(
-    closeImpl: noopClose,
+    closeImpl: dsClose,
     atEndImpl: dsAtEnd,
     setPositionImpl: dsSetPosition,
     getPositionImpl: dsGetPosition,
     readDataImpl: dsReadData,
     peekDataImpl: dsPeekData,
     writeDataImpl: dsWriteData,
+    flushImpl: dsFlush,
     ds: f)
