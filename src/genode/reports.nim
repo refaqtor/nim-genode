@@ -17,13 +17,13 @@
 ##
 ##
 ## .. code-block:: nim
+##   import std/streams
 ##   import genode/reports, xmltree
 ##   let
 ##     report = newReportClient("status")
-##     str = report.newStream()
-##     xml = <>some_xml_content(some_attr="some text")
-##   str.writeLine(xml)
-##   report.submit()
+##     resport.submit do (str: Stream):
+##       let xml = <>some_xml_content(some_attr="some text")
+##       str.writeLine(xml)
 ##
 
 import ../genode, streams
@@ -59,23 +59,13 @@ proc newReportClient*(env: GenodeEnv; label: string, bufferSize = 4096): ReportC
   result.streams.replace ds
   result.bufferSize = ds.size
 
-proc newStream*(r: ReportClient): DataspaceStream =
-  ## Open new a stream over the Report dataspace.
-  r.streams.newStream
-
-proc submit*(r: ReportClient; size = 0) =
-  ## Submit a report
-  assert(size < r.bufferSize)
-  var size = size
-  r.conn.submit(if size < 1: r.bufferSize else: size)
-
-proc submit*(r: ReportClient; s: string) =
-  ## Submit a report
-  assert(s.len < r.bufferSize)
-  let ds = r.newStream()
-  ds.write(s)
+proc submit*(r: ReportClient; cb: proc(s: Stream)) =
+  ## Submit a report.
+  let ds = r.streams.newStream()
+  clear ds
+  cb ds
+  r.conn.submit(getPosition ds)
   close ds
-  r.conn.submit(s.len)
 
 proc close*(r: ReportClient) =
   ## Close a Report connection.
