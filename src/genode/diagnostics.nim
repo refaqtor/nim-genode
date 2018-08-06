@@ -18,7 +18,6 @@ when not defined(nimTypeNames):
 var
   reportLock: Lock
   reporter {.guard: reportLock.}: ReportClient
-  dump: HeapDump
 
 proc submitHeapReport*(env: GenodeEnv) =
   ## Submits a "heap_dump" report of the size of heaps
@@ -28,14 +27,9 @@ proc submitHeapReport*(env: GenodeEnv) =
   withLock reportLock:
     if reporter.isNil:
       reporter = env.newReportClient("heap_dump")
-    dumpNumberOfInstances(dump)
     reporter.submit do (str: Stream):
-      when defined(nimTypeNames):
-        str.writeLine("<heap total-allocated=\"",dump.totalAllocated,
-          "\" allocs=\"", dump.allocs, "\" deallocs=\"", dump.deallocs, "\">")
-      else:
-        str.writeLine("<heap total-allocated=\"", dump.totalAllocated, "\">")
-      for inst in dump.instances:
-        str.writeLine("\t<type name=\"", inst.name,
-          "\" count=\"", inst.count, "\" sizes=\"", inst.sizes, "\"/>")
+      str.writeLine("<heap>")
+      for x in dumpHeapInstances():
+        str.writeLine("\t<type name=\"", x.name,
+          "\" count=\"", x.count, "\" sizes=\"", x.sizes, "\"/>")
       str.writeLine("</heap>")
