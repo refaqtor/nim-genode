@@ -106,7 +106,7 @@ proc newRomHandler*(env: GenodeEnv; label: string; cb: HandlerProc): RomHandler 
   proc wrappedCb =
      rh.cb(rh.rom)
     # wrap callback in procedure to update and produce a stream
-  rh.sig = env.ep.newSignalDispatcher(wrappedCb, label)
+  rh.sig = env.ep.newSignalHandler(wrappedCb, label)
   rh.rom.sigh(rh.sig.cap)
     # register signal handler
   rh

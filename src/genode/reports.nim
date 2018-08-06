@@ -21,7 +21,7 @@
 ##   import genode/reports, xmltree
 ##   let
 ##     report = newReportClient("status")
-##     resport.submit do (str: Stream):
+##     report.submit do (str: Stream):
 ##       let xml = <>some_xml_content(some_attr="some text")
 ##       str.writeLine(xml)
 ##

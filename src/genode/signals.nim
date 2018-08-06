@@ -30,30 +30,32 @@ type
     cb: HandlerProc
       ## Signal handling procedure called during dispatch.
 
-  SignalDispatcher* = ref SignalDispatcherObj
-    ## Nim object enclosing a Genode signal dispatcher.
+  SignalHandler* = ref SignalDispatcherObj
+    ## Nim object enclosing a Genode signal handler.
 
-proc construct(cpp: SignalDispatcherCpp; ep: Entrypoint; sh: SignalDispatcher) {.importcpp.}
+{.deprecated: [SignalDispatcher: SignalHandler].}
+
+proc construct(cpp: SignalDispatcherCpp; ep: Entrypoint; sh: SignalHandler) {.importcpp.}
 
 proc cap(cpp: SignalDispatcherCpp): SignalContextCapability {.
   importcpp: "#->cap()".}
 
-proc newSignalDispatcher*(ep: Entrypoint; cb: HandlerProc; label = "unspecified"): SignalDispatcher =
-  ## Create a new signal dispatcher. A label is recommended for
-  ## debugging purposes. A signal dispatcher will not be garbage
+proc newSignalHandler*(ep: Entrypoint; cb: HandlerProc; label = "unspecified"): SignalHandler =
+  ## Create a new signal handler. A label is recommended for
+  ## debugging purposes. A signal handler will not be garbage
   ## collected until after it has been dissolved.
   assert(not cb.isNil)
-  result = SignalDispatcher(cb: cb)
+  result = SignalHandler(cb: cb)
   result.cpp.construct(ep, result)
   GCref result
   assert(not result.cb.isNil)
 
-proc dissolve*(sig: SignalDispatcher) =
+proc dissolve*(sig: SignalHandler) =
   ## Dissolve signal dispatcher from entrypoint.
   destruct sig.cpp
   GCunref sig
 
-proc cap*(sig: SignalDispatcher): SignalContextCapability =
+proc cap*(sig: SignalHandler): SignalContextCapability =
   ## Signal context capability. Can be delegated to external components.
   assert(not sig.cb.isNil)
   sig.cpp.cap
