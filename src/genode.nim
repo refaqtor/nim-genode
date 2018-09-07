@@ -65,6 +65,9 @@ type SessionCapability* {.
   header: "<session/capability.h>", final, pure.} = object
   ## Capability to a session.
 
+proc isValid*(cap: SessionCapability): bool {.
+  importcpp: "#.valid()", tags: [RpcEffect].}
+
 #
 # Signals
 #
@@ -73,6 +76,9 @@ type SignalContextCapability* {.
   importcpp: "Genode::Signal_context_capability",
   header: "<base/signal.h>", final, pure.} = object
   ## Capability to an asynchronous signal context.
+
+proc isValid*(cap: SignalContextCapability): bool {.
+  importcpp: "#.valid()", tags: [RpcEffect].}
 
 #
 # Dataspaces
@@ -176,10 +182,6 @@ proc dsWriteData(s: Stream, buffer: pointer, bufLen: int) =
 
 proc dsFlush(s: Stream) = discard
 
-proc newDataspaceStreamFactory*(rm: RegionMap): DataspaceStreamFactory =
-  ## Initialize a new dataspace stream factory.
-  DataspaceStreamFactory(rm: rm)
-
 proc close*(f: DataspaceStreamFactory) =
   ## Close a dataspace and invalidate its streams.
   f.rm.detach cast[ByteAddress](f.data)
@@ -194,6 +196,15 @@ proc replace*(f: DataspaceStreamFactory; cap: DataspaceCapability) =
   if cap.isValid:
     f.data = cast[ptr array[0,byte]](f.rm.attach cap)
     f.size = cap.size
+
+proc newDataspaceStreamFactory*(rm: RegionMap): DataspaceStreamFactory =
+  ## Initialize a new dataspace stream factory.
+  DataspaceStreamFactory(rm: rm)
+
+proc newDataspaceStreamFactory*(rm: RegionMap; cap: DataspaceCapability): DataspaceStreamFactory =
+  ## Initialize a new dataspace stream factory with a capability.
+  result = DataspaceStreamFactory(rm: rm)
+  result.replace cap
 
 proc newStream*(f: DataspaceStreamFactory): DataspaceStream =
   ## Open a new stream over a dataspace.

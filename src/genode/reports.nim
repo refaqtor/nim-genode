@@ -41,30 +41,35 @@ type
     streams: DataspaceStreamFactory
     bufferSize: int
 
-proc construct(c: Connection; env: GenodeEnv; label: cstring, bufferSize: csize) {.
-  importcpp: "#.construct(*#, @)", tags: [RpcEffect].}
-
-proc dataspace(c: Connection): DataspaceCapability {.tags: [RpcEffect],
-  importcpp: "#->dataspace()".}
-
-proc submit(c: Connection, n: csize) {.tags: [RpcEffect],
-  importcpp: "#->submit(#)".}
-
-proc newReportClient*(env: GenodeEnv; label: string, bufferSize = 4096): ReportClient=
+proc newReportClient*(env: GenodeEnv; label: string; bufferSize = 4096): ReportClient=
   ## Open a new *Report* session.
+  proc construct(c: Connection; env: GenodeEnv; label: cstring, bufferSize: csize) {.
+    importcpp: "#.construct(*#, @)", tags: [RpcEffect].}
+  proc dataspace(c: Connection): DataspaceCapability {.tags: [RpcEffect],
+    importcpp: "#->dataspace()".}
   new result
   result.conn.construct(env, label, bufferSize)
-  result.streams = env.rm.newDataspaceStreamFactory()
   let ds = result.conn.dataspace
-  result.streams.replace ds
+  result.streams = env.rm.newDataspaceStreamFactory(ds)
   result.bufferSize = ds.size
+
+proc newStream*(r: ReportClient): Stream =
+  ## Return a new stream over the *Report* dataspace.
+  r.streams.newStream()
+
+proc submit*(r: ReportClient; len: int) =
+  ## Inform the serve of new content in the report dataspace of
+  ## *len* length.
+  proc submit(c: Connection, n: csize) {.tags: [RpcEffect],
+    importcpp: "#->submit(#)".}
+  r.conn.submit(len)
 
 proc submit*(r: ReportClient; cb: proc(s: Stream)) =
   ## Submit a report.
   let ds = r.streams.newStream()
   clear ds
   cb ds
-  r.conn.submit(getPosition ds)
+  r.submit(getPosition ds)
   close ds
 
 proc close*(r: ReportClient) =

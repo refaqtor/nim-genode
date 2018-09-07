@@ -61,7 +61,6 @@ from strutils import rsplit
 const
   inputsPath = currentSourcePath.rsplit("/", 1)[0]
   inputsH = inputsPath & "/genode_inputs.h"
-{.passC: "-I" & inputsPath.}
 
 const
   eventH = "input/event.h"
@@ -146,38 +145,54 @@ proc onTouchRelease*(ev: Event; cb: proc(id: int)) =
     cb(ev.touch_id)
 
 type
-  SessionCapability* {.
+  InputSessionCapability* {.
     importcpp: "Input::Session_capability",
     header: "<input_session/capability.h>", final, pure.} = object
     ## Typed capability for an **Input** session.
 
-  ClientCppObj {.
+  CppClientObj {.
     importcpp: "Input::Session_client",
-    header: inputsH.} = object
-  ClientCpp = Constructible[ClientCppObj]
+    header: "<input_session/client.h>".} = object
+  InputSessionClientPtr* = ptr CppClientObj
 
-  InputClient* = ref object
+  InputClientObj = object of RootObj
+    cpp: InputSessionClientPtr
+
+  InputClient* = ref InputClientObj
     ## Client of **Input** service.
-    cpp: ClientCpp
+
+  CppConnectionObj {.
+    importcpp: "Input::Connection", header: "<input_session/connection.h>".} = object
+  CppConnection = Constructible[CppConnectionObj]
+  InputClientConnectionObj = object of InputClientObj
+    conn: CppConnection
+
+  InputClientConnection* = ref InputClientConnectionObj
 
   EventBuffer {.unchecked.} = array[0, Event]
     ## Type to represent dataspace containing Events.
 
-proc construct(cpp: ClientCpp; rm: RegionMap; cap: SessionCapability) {.
-  importcpp: "#.construct(*#, @)".}
+proc construct(cpp: CppConnection; env: GenodeEnv) {.
+  importcpp: "#.construct(*#)".}
 
-proc newInputClient*(env: GenodeEnv; cap: SessionCapability): InputClient =
+proc newInputClient*(session: InputSessionClientPtr): InputClient =
+  ## Create a new **Input** client from a pointer to an existing **Input** session.
+  InputClient(cpp: session)
+
+proc newInputClient*(env: GenodeEnv): InputClientConnection =
   new result
-  result.cpp.construct(env.rm, cap)
-  ## Create a new **Input** client from a sesison capability.
+  result.conn.construct(env)
+  proc client(cpp: CppConnection): InputSessionClientPtr {.
+    importcpp: "((Input::Session_client*)&(*#))".}
+  result.cpp = result.conn.client
+  GC_ref(result)
+  ## Create a new **Input** client connection.
+  ## Must be closed before it can be freed.
 
-proc flush(input: ClientCpp): int {.tags: [RpcEffect],
-  importcpp: "#->flush()".}
+proc close*(input: InputClientConnection) {.tags: [RpcEffect].} =
+  GC_unref(input)
 
-proc event_buffer(input: ClientCpp): ptr EventBuffer {.
-  importcpp: "Input::Binding::event_buffer(*#)".}
-
-proc sigh(input: ClientCpp; cap: SignalContextCapability) {.tags: [RpcEffect],
+proc sigh(input: InputSessionClientPtr; cap: SignalContextCapability) {.tags: [RpcEffect],
   importcpp: "#->sigh(@)".}
 
 proc sigh*(input: InputClient; cap: SignalContextCapability) =
@@ -186,6 +201,10 @@ proc sigh*(input: InputClient; cap: SignalContextCapability) =
 
 iterator events*(input: InputClient): Event =
   ## Flush and iterate over a client event queue.
+  proc event_buffer(input: InputSessionClientPtr): ptr EventBuffer {.
+    importcpp: "Input::Binding::event_buffer(*#)".}
+  proc flush(input: InputSessionClientPtr): int {.tags: [RpcEffect],
+    importcpp: "#->flush()".}
   let
     buf = input.cpp.eventBuffer
     n = flush input.cpp

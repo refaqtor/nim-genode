@@ -40,7 +40,7 @@ proc construct(cpp: SignalDispatcherCpp; ep: Entrypoint; sh: SignalHandler) {.im
 proc cap(cpp: SignalDispatcherCpp): SignalContextCapability {.
   importcpp: "#->cap()".}
 
-proc newSignalHandler*(ep: Entrypoint; cb: HandlerProc; label = "unspecified"): SignalHandler =
+proc newSignalHandler*(ep: Entrypoint; cb: HandlerProc): SignalHandler =
   ## Create a new signal handler. A label is recommended for
   ## debugging purposes. A signal handler will not be garbage
   ## collected until after it has been dissolved.

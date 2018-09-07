@@ -7,7 +7,7 @@
 
 # TODO: Provide sesion creation and destruction examples.
 
-import ../genode, ./roms
+import ../genode, ./roms, ./parents
 
 import parseutils, strutils, strtabs, streams,
   parsexml, xmlparser, xmltree
@@ -61,7 +61,7 @@ proc lookupPolicy*(policies: seq[XmlNode]; label: TaintedString): XmlNode =
             resultScore = score
             result = p
 
-proc parseArgString*(args, key: string; default = ""): string =
+proc parseArgString*(args: TaintedString; key: string; default = ""): string =
   ## Extract a keyed value from session request arguments.
   result = default
   var off = args.find key
@@ -73,7 +73,7 @@ proc parseArgString*(args, key: string; default = ""): string =
       if args[off] != '"':
         result = default
 
-proc parseArgInt*(args, key: string; default = -1): BiggestInt =
+proc parseArgInt*(args: TaintedString; key: string; default = -1): BiggestInt =
   ## Extract an integral argument from session request arguments.
   result = default
   var off = args.find key
@@ -97,32 +97,26 @@ proc parseArgInt*(args, key: string; default = -1): BiggestInt =
         else:
           result = -1
 
-type SessionId* = distinct int
-  ## Session identifier shared between
-  ## parent and child components.
-proc `==`*(x, y: SessionId): bool {.borrow.}
-
 type
   SessionRequestsParser = object
     rom: RomClient
     xp: XmlParser
-    args*: string ## Arguments of the session the parser is positioned on.
 
 proc initSessionRequestsParser*(rom: RomClient): SessionRequestsParser =
   ## Initialize a parser of the Genode "session_requests" ROM.
-  SessionRequestsParser(rom: rom, args: "")
+  SessionRequestsParser(rom: rom)
 
-proc argString*(srp: var SessionRequestsParser; key: string; default = ""): string =
+proc argString*(args, key: string; default = ""): string =
  ## Parse an string from the current session arguments.
- if srp.args != "":
-   parseArgString(srp.args, key, default)
+ if args != "":
+   parseArgString(args, key, default)
  else:
    default
 
-proc argInt*(srp: var SessionRequestsParser; key: string; default = -1): BiggestInt =
+proc argInt*(args, key: string; default = -1): BiggestInt =
  ## Parse an integer from the current session arguments.
- if srp.args != "":
-   parseArgInt(srp.args, key, default)
+ if args != "":
+   parseArgInt(args, key, default)
  else:
    default
 
@@ -140,8 +134,9 @@ proc skipRest(srp: var SessionRequestsParser) =
     else: discard
     next srp
 
-iterator create*(srp: var SessionRequestsParser): tuple[id: SessionId, service, label: TaintedString] =
+iterator create*(srp: var SessionRequestsParser; service: string): tuple[id: ServerId, label, args: TaintedString] =
   ## Iterate over session creation requests.
+  var serviceName = ""
   let str = srp.rom.newStream
   open srp.xp, str, "session_requests"
   next srp
@@ -152,14 +147,13 @@ iterator create*(srp: var SessionRequestsParser): tuple[id: SessionId, service, 
         if srp.xp.elementName == "create":
           next srp
           block createLoop:
-            var result: tuple[id: SessionId, service, label: TaintedString]
-            srp.args.setLen 0
+            var result: tuple[id: ServerId; label, args: TaintedString]
             while srp.xp.kind == xmlAttribute:
               case srp.xp.attrKey:
               of "id":
-                result.id = srp.xp.attrValue.parseInt.SessionId
+                result.id = srp.xp.attrValue.parseInt.ServerId
               of "service":
-                result.service = srp.xp.attrValue
+                serviceName = srp.xp.attrValue
               of "label":
                 result.label = srp.xp.attrValue
               next srp
@@ -167,14 +161,16 @@ iterator create*(srp: var SessionRequestsParser): tuple[id: SessionId, service, 
               next srp
             next srp
             if srp.xp.kind == xmlElementStart and srp.xp.elementName == "args":
+              result.args = ""
               next srp
               while srp.xp.kind != xmlElementEnd:
                 if srp.xp.kind == xmlCharData:
-                  srp.args.add srp.xp.charData
+                  result.args.add srp.xp.charData
                 next srp
               next srp
             skipRest srp
-            yield result
+            if serviceName == service:
+              yield result
         else:
           next srp
       of xmlEof:
@@ -184,7 +180,7 @@ iterator create*(srp: var SessionRequestsParser): tuple[id: SessionId, service, 
       else: next srp # skip other events
   close srp.xp
 
-iterator close*(srp: var SessionRequestsParser): SessionId =
+iterator close*(srp: var SessionRequestsParser): ServerId =
   ## Iterate over session close requests.
   let str = srp.rom.newStream
   open srp.xp, str, "session_requests"
@@ -195,11 +191,11 @@ iterator close*(srp: var SessionRequestsParser): SessionId =
       of xmlElementOpen:
         case srp.xp.elementName:
         of "close":
-          var id: SessionId
+          var id: ServerId
           next srp
           while srp.xp.kind == xmlAttribute:
             if srp.xp.attrKey == "id":
-              id = srp.xp.attrValue.parseInt.SessionId
+              id = srp.xp.attrValue.parseInt.ServerId
               next srp
               break
             next srp

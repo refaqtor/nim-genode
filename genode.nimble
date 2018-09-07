@@ -1,6 +1,6 @@
 # Package
 
-version       = "18.07.0"
+version       = "18.08.0"
 author        = "Emery Hemingway"
 description   = "System libraries for the Genode Operating System Framework"
 license       = "AGPLv3"

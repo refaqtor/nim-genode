@@ -106,7 +106,7 @@ proc newRomHandler*(env: GenodeEnv; label: string; cb: HandlerProc): RomHandler 
   proc wrappedCb =
      rh.cb(rh.rom)
     # wrap callback in procedure to update and produce a stream
-  rh.sig = env.ep.newSignalHandler(wrappedCb, label)
+  rh.sig = env.ep.newSignalHandler(wrappedCb)
   rh.rom.sigh(rh.sig.cap)
     # register signal handler
   rh
@@ -123,3 +123,11 @@ proc close*(rh: RomHandler) =
   ## Close and dissolve ROM handler.
   close rh.rom
   dissolve rh.sig
+
+import std/xmlparser, xmltree
+  # TODO: write a simple XML parser without allocation
+proc xml*(rom: RomClient): XmlNode =
+  ## Parse ROM into an XML tree.
+  let s = rom.newStream
+  result = s.parseXml
+  close s
